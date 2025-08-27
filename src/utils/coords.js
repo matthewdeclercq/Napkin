@@ -26,8 +26,24 @@ export function xyToCellRef(x, y) {
 }
 
 export function cellRefToXY(ref) {
-    const match = /^([A-Z]+)([1-9][0-9]*)$/.exec(ref.trim());
-    if (!match) return null;
+    // Handle null, undefined, or empty refs
+    if (!ref || typeof ref !== 'string') {
+        console.warn('[cellRefToXY] Received invalid ref:', ref, typeof ref);
+        return null;
+    }
+
+    const trimmedRef = ref.trim();
+    if (!trimmedRef) {
+        console.warn('[cellRefToXY] Received empty ref after trim:', ref);
+        return null;
+    }
+
+    const match = /^([A-Z]+)([1-9][0-9]*)$/.exec(trimmedRef);
+    if (!match) {
+        console.warn('[cellRefToXY] Invalid cell reference format:', trimmedRef);
+        return null;
+    }
+
     const colLetters = match[1];
     const row = parseInt(match[2], 10);
     const x = GRID_MIN + columnLettersToX(colLetters);

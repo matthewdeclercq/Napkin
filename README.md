@@ -10,10 +10,18 @@ cd /Users/matthewdeclercq/DEV/Napkin
 npm i
 ```
 
-Run
+Development
 
 ```
+# Start development server
 npm run start
+
+# Code quality checks
+npm run lint          # Check for linting issues
+npm run lint:fix      # Fix linting issues automatically
+npm run format        # Format code with Prettier
+npm run format:check  # Check if code is formatted correctly
+
 # Press i for iOS simulator or a for Android if configured, or scan QR in Expo Go
 ```
 

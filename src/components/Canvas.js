@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, memo } from 'react';
 import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { PinchGestureHandler, PanGestureHandler, State } from 'react-native-gesture-handler';
 import { coordKey, GRID_MIN, GRID_MAX } from '../utils/coords';
@@ -7,6 +7,71 @@ const CELL_BASE_WIDTH = 96;
 const CELL_BASE_HEIGHT = 48; // half of previous height
 const GRID_WORLD_X = CELL_BASE_WIDTH * (GRID_MAX - GRID_MIN + 1);
 const GRID_WORLD_Y = CELL_BASE_HEIGHT * (GRID_MAX - GRID_MIN + 1);
+
+// Memoized cell component to prevent unnecessary re-renders
+const Cell = memo(({ cell, displayValues, focused, isFocused, onCellPress, referencedColors }) => {
+	const value = displayValues[coordKey(cell.x, cell.y)] ?? '';
+	const left = (cell.x - GRID_MIN) * CELL_BASE_WIDTH;
+	const top = (GRID_MAX - cell.y) * CELL_BASE_HEIGHT;
+	const hasContent = Boolean(cell.content && String(cell.content).trim().length > 0);
+	const refColor = referencedColors[coordKey(cell.x, cell.y)];
+	const borderColor = isFocused ? '#000' : refColor ? refColor : hasContent ? '#666' : '#bbb';
+	const borderWidth = isFocused || refColor ? 2 : hasContent ? 1 : StyleSheet.hairlineWidth;
+	const zIndex = isFocused ? 3 : refColor ? 2 : hasContent ? 1 : 0;
+
+	// Generate accessibility label based on cell state and content
+	const getAccessibilityLabel = () => {
+		const position = `${cell.x}, ${cell.y}`;
+		const isFormula = cell.content?.startsWith('=');
+		const isReferenced = Boolean(refColor);
+
+		let label = `Cell ${position}`;
+
+		if (isFocused) {
+			label += ', currently selected';
+		}
+
+		if (hasContent) {
+			if (isFormula) {
+				label += `, formula: ${cell.content}`;
+			} else {
+				label += `, contains: ${value}`;
+			}
+		} else {
+			label += ', empty';
+		}
+
+		if (isReferenced) {
+			label += ', referenced by formula';
+		}
+
+		return label;
+	};
+
+	const getAccessibilityHint = () => {
+		if (isFocused) {
+			return 'Double tap to select all text, or use the input bar below to edit';
+		}
+		return 'Tap to select this cell for editing';
+	};
+
+	return (
+		<TouchableOpacity
+			style={[styles.cell, { left, top, borderColor, borderWidth, zIndex }, isFocused && styles.cellFocused]}
+			onPress={() => onCellPress(cell.x, cell.y)}
+			accessible
+			accessibilityLabel={getAccessibilityLabel()}
+			accessibilityHint={getAccessibilityHint()}
+			accessibilityRole="button"
+			accessibilityState={{
+				selected: isFocused,
+				disabled: false
+			}}
+		>
+			<Text style={styles.cellText} numberOfLines={6}>{value}</Text>
+		</TouchableOpacity>
+	);
+});
 
 export default function Canvas({ cells, displayValues, focused, onFocusCell, onTapRefWhileFormula, isFormula, referencedColors = {}, onDoubleTapCell, onShakeUndo }) {
 	const [scale, setScale] = useState(1);
@@ -65,31 +130,33 @@ export default function Canvas({ cells, displayValues, focused, onFocusCell, onT
 	};
 
 	return (
-		<View style={styles.container}>
+		<View
+			style={styles.container}
+			accessible={true}
+			accessibilityLabel="Spreadsheet canvas - pan and zoom to navigate, tap cells to edit"
+			accessibilityHint="Use two fingers to pinch and zoom, or drag to pan around the spreadsheet"
+			accessibilityRole="scrollView"
+		>
 			<PanGestureHandler onHandlerStateChange={onPanEvent} onGestureEvent={onPanEvent}>
 				<View style={StyleSheet.absoluteFill}>
 					<PinchGestureHandler onHandlerStateChange={onPinchEvent} onGestureEvent={onPinchEvent}>
 						<View style={StyleSheet.absoluteFill}>
-                            <View style={[styles.inner, { transform: [{ translateX: translate.x }, { translateY: translate.y }, { scale }] }]}>
+                            <View
+								style={[styles.inner, { transform: [{ translateX: translate.x }, { translateY: translate.y }, { scale }] }]}
+								accessibilityLabel={`Spreadsheet grid showing ${cellEntries.length} cells`}
+							>
 								{cellEntries.map((cell) => {
 									const isFocused = focused ? (cell.x === focused.x && cell.y === focused.y) : false;
-									const value = displayValues[coordKey(cell.x, cell.y)] ?? '';
-									const left = (cell.x - GRID_MIN) * CELL_BASE_WIDTH;
-									const top = (GRID_MAX - cell.y) * CELL_BASE_HEIGHT;
-                                    const hasContent = Boolean(cell.content && String(cell.content).trim().length > 0);
-                                    const refColor = referencedColors[coordKey(cell.x, cell.y)];
-                                    const borderColor = isFocused ? '#000' : refColor ? refColor : hasContent ? '#666' : '#bbb';
-                                    const borderWidth = isFocused || refColor ? 2 : hasContent ? 1 : StyleSheet.hairlineWidth;
-                                    const zIndex = isFocused ? 3 : refColor ? 2 : hasContent ? 1 : 0;
 									return (
-										<TouchableOpacity
+										<Cell
 											key={coordKey(cell.x, cell.y)}
-                                            style={[styles.cell, { left, top, borderColor, borderWidth, zIndex }, isFocused && styles.cellFocused]}
-											onPress={() => onCellPress(cell.x, cell.y)}
-											accessible accessibilityLabel={`Cell ${cell.x},${cell.y}`}
-										>
-											<Text style={styles.cellText} numberOfLines={6}>{value}</Text>
-										</TouchableOpacity>
+											cell={cell}
+											displayValues={displayValues}
+											focused={focused}
+											isFocused={isFocused}
+											onCellPress={onCellPress}
+											referencedColors={referencedColors}
+										/>
 									);
 								})}
 							</View>

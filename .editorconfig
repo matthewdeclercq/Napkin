@@ -1,0 +1,42 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# top-most EditorConfig file
+root = true
+
+# All files
+[*]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# JavaScript/React files
+[*.{js,jsx}]
+indent_style = space
+indent_size = 2
+
+# JSON files
+[*.json]
+indent_style = space
+indent_size = 2
+
+# Markdown files
+[*.md]
+trim_trailing_whitespace = false
+
+# YAML files
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# Package.json
+[package.json]
+indent_style = space
+indent_size = 2
+
+# Configuration files
+[*.config.js]
+indent_style = space
+indent_size = 2

@@ -3,6 +3,7 @@ import { StatusBar, useColorScheme, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import HomeScreen from './src/screens/HomeScreen';
 import NapkinScreen from './src/screens/NapkinScreen';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import { loadNapkinById, saveNapkin, createEmptyNapkin } from './src/utils/storage';
 
 export default function App() {
@@ -34,14 +35,20 @@ export default function App() {
 	}, []);
 
 	return (
-		<GestureHandlerRootView style={{ flex: 1, backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }}>
-			<StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
-			{!selectedNapkinId ? (
-				<HomeScreen onCreateNew={handleCreateNew} onOpenNapkin={setSelectedNapkinId} />
-			) : napkin ? (
-				<NapkinScreen napkin={napkin} onSaveNapkin={handleSaveNapkin} onExit={handleExitToHome} />
-			) : null}
-		</GestureHandlerRootView>
+		<ErrorBoundary>
+			<GestureHandlerRootView style={{ flex: 1, backgroundColor: colorScheme === 'dark' ? '#000' : '#fff' }}>
+				<StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
+				{!selectedNapkinId ? (
+					<ErrorBoundary>
+						<HomeScreen onCreateNew={handleCreateNew} onOpenNapkin={setSelectedNapkinId} />
+					</ErrorBoundary>
+				) : napkin ? (
+					<ErrorBoundary>
+						<NapkinScreen napkin={napkin} onSaveNapkin={handleSaveNapkin} onExit={handleExitToHome} />
+					</ErrorBoundary>
+				) : null}
+			</GestureHandlerRootView>
+		</ErrorBoundary>
 	);
 }
 

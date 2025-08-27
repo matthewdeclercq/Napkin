@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Environment files
+.env*
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Expo
+.expo/
+.expo-shared/
+
+# Assets
+assets/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.ico
+
+# Generated files
+*.generated.*
+
+# Configuration files that might not need linting
+babel.config.js
+metro.config.js
+webpack.config.js
+
+# Package files
+package-lock.json
+yarn.lock
