@@ -5,6 +5,7 @@ import { loadIndex, deleteNapkin, renameNapkin } from '../utils/storage';
 import NapkinListItem from '../components/NapkinListItem';
 import { useAsyncOperation } from '../hooks/useAsyncOperation';
 import { getUserFriendlyErrorMessage } from '../utils/errorHandling';
+import { getLoadingState } from '../utils/conditionalHelpers';
 
 export default function HomeScreen({ onCreateNew, onOpenNapkin }) {
 	const [items, setItems] = useState([]);
@@ -136,44 +137,100 @@ export default function HomeScreen({ onCreateNew, onOpenNapkin }) {
 						</TouchableOpacity>
 					</View>
 				</BlurView>
-				{initialLoading || isLoadingNapkins ? (
-					<View style={styles.loadingContainer}>
-						<ActivityIndicator size="large" color="#007AFF" />
-						<Text style={styles.loadingText}>Loading napkins...</Text>
-					</View>
-				) : loadError ? (
-					<View style={styles.errorContainer}>
-						<Text style={styles.errorText}>{loadError}</Text>
-						<TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
-							<Text style={styles.retryText}>Retry</Text>
-						</TouchableOpacity>
-					</View>
-				) : (
-					<FlatList
-						data={items}
-						keyExtractor={(it) => it.id}
-						renderItem={({ item }) => (
-							<NapkinListItem
-								item={item}
-								onPress={() => onOpenNapkin(item.id)}
-								onDelete={() => handleDelete(item.id)}
-								onRename={(name) => handleRename(item.id, name)}
-							/>
-						)}
-						refreshControl={<RefreshControl refreshing={isLoadingNapkins && !initialLoading} onRefresh={handleRefresh} />}
-						contentContainerStyle={{ paddingTop: 80, paddingBottom: 0 }}
-						style={styles.list}
-						ListEmptyComponent={
-							<View style={styles.emptyContainer}>
-								<Text style={styles.emptyText}>No napkins yet</Text>
-								<Text style={styles.emptySubtext}>Create your first napkin to get started</Text>
-							</View>
-						}
-					/>
-				)}
+				<ContentRenderer
+					initialLoading={initialLoading}
+					isLoadingNapkins={isLoadingNapkins}
+					loadError={loadError}
+					items={items}
+					onOpenNapkin={onOpenNapkin}
+					onDelete={handleDelete}
+					onRename={handleRename}
+					onRefresh={handleRefresh}
+					onRetry={handleRetry}
+				/>
 			</SafeAreaView>
 		</ImageBackground>
 	);
+}
+
+// Extract complex render logic into a separate component
+function ContentRenderer({
+	initialLoading,
+	isLoadingNapkins,
+	loadError,
+	items,
+	onOpenNapkin,
+	onDelete,
+	onRename,
+	onRefresh,
+	onRetry
+}) {
+	// Determine the current state using utility function
+	const currentState = getLoadingState({
+		initialLoading,
+		isLoading: isLoadingNapkins,
+		hasError: !!loadError,
+		isEmpty: items.length === 0
+	});
+
+	switch (currentState) {
+		case 'loading':
+			return (
+				<View style={styles.loadingContainer}>
+					<ActivityIndicator size="large" color="#007AFF" />
+					<Text style={styles.loadingText}>Loading napkins...</Text>
+				</View>
+			);
+
+		case 'error':
+			return (
+				<View style={styles.errorContainer}>
+					<Text style={styles.errorText}>{loadError}</Text>
+					<TouchableOpacity style={styles.retryButton} onPress={onRetry}>
+						<Text style={styles.retryText}>Retry</Text>
+					</TouchableOpacity>
+				</View>
+			);
+
+		case 'empty':
+			return (
+				<View style={styles.emptyContainer}>
+					<Text style={styles.emptyText}>No napkins yet</Text>
+					<Text style={styles.emptySubtext}>Create your first napkin to get started</Text>
+				</View>
+			);
+
+		case 'loaded':
+		default:
+			return (
+				<FlatList
+					data={items}
+					keyExtractor={(it) => it.id}
+					renderItem={({ item }) => (
+						<NapkinListItem
+							item={item}
+							onPress={() => onOpenNapkin(item.id)}
+							onDelete={() => onDelete(item.id)}
+							onRename={(name) => onRename(item.id, name)}
+						/>
+					)}
+					refreshControl={
+						<RefreshControl
+							refreshing={isLoadingNapkins && !initialLoading}
+							onRefresh={onRefresh}
+						/>
+					}
+					contentContainerStyle={{ paddingTop: 80, paddingBottom: 0 }}
+					style={styles.list}
+					ListEmptyComponent={
+						<View style={styles.emptyContainer}>
+							<Text style={styles.emptyText}>No napkins yet</Text>
+							<Text style={styles.emptySubtext}>Create your first napkin to get started</Text>
+						</View>
+					}
+				/>
+			);
+	}
 }
 
 const styles = StyleSheet.create({

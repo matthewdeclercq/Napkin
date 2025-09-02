@@ -2,18 +2,22 @@ import React, { useMemo } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { cellRefToXY, coordKey } from '../utils/coords';
 
+// Temporarily revert regex optimization to fix formula highlighting
+// TODO: Re-implement with proper reset logic
+const CELL_REF_REGEX = /\b([A-Z]+[1-9][0-9]*)\b/g;
+
 export default function InputBar({ value, onChangeText, onSubmit, selection, onSelectionChange, isFormula, referencedColors = {}, isLoading = false }) {
     const canSubmit = true; // allow submitting empty cells
 
     const highlightedSpans = useMemo(() => {
         if (!isFormula || !value || !value.startsWith('=')) return null;
+
         const parts = [];
-        const re = /\b([A-Z]+[1-9][0-9]*)\b/g; // Use same regex as formula.js with word boundaries
         let lastIndex = 0;
         let m;
-        while ((m = re.exec(value)) !== null) {
+        while ((m = CELL_REF_REGEX.exec(value)) !== null) {
             const start = m.index;
-            const end = re.lastIndex;
+            const end = CELL_REF_REGEX.lastIndex;
             if (start > lastIndex) {
                 parts.push({ text: value.slice(lastIndex, start), color: null });
             }

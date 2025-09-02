@@ -1,5 +1,5 @@
-import { useMemo, useCallback } from 'react';
-import { computeAllDisplayValues, extractRefs, evaluateContentForDisplay } from '../utils/formula';
+import { useMemo, useCallback, useRef } from 'react';
+import { computeDisplayValues, extractRefs, evaluateContentForDisplay } from '../utils/formula';
 import { cellRefToXY, xyToCellRef, coordKey } from '../utils/coords';
 
 /**
@@ -14,10 +14,57 @@ import { cellRefToXY, xyToCellRef, coordKey } from '../utils/coords';
  * @returns {Object} Formula-related state and handlers
  */
 export function useFormulaLogic(cells, inputValue, editingCell, isEditingDirty, selection, setInputValue, setSelection) {
-  // Memoize expensive display values computation
-  const displayValues = useMemo(() => {
-    return computeAllDisplayValues(cells);
+  // Track previous cells and display values for optimization
+  const prevCellsRef = useRef();
+  const prevDisplayValuesRef = useRef();
+
+  // Detect which cells have changed for selective recalculation
+  const changedKeys = useMemo(() => {
+    if (!prevCellsRef.current) {
+      prevCellsRef.current = cells;
+      return null; // First render, calculate all
+    }
+
+    const changes = [];
+    const currentKeys = new Set(Object.keys(cells));
+    const previousKeys = new Set(Object.keys(prevCellsRef.current));
+
+    // Check for added/modified cells
+    for (const key of currentKeys) {
+      if (!previousKeys.has(key) || cells[key].content !== prevCellsRef.current[key]?.content) {
+        changes.push(key);
+      }
+    }
+
+    // Check for removed cells (though this is less common in our app)
+    for (const key of previousKeys) {
+      if (!currentKeys.has(key)) {
+        changes.push(key);
+      }
+    }
+
+    return changes.length > 0 ? changes : null;
   }, [cells]);
+
+  // Memoize expensive display values computation with optimization
+  const displayValues = useMemo(() => {
+    let result;
+
+    if (!prevCellsRef.current || !changedKeys) {
+      // First render or no specific changes detected - full recalculation
+      result = computeDisplayValues(cells);
+    } else {
+      // Use previous display values for selective recalculation
+      const prevValues = prevDisplayValuesRef.current || {};
+      result = computeDisplayValues(cells, prevValues, changedKeys);
+    }
+
+    // Store current values for next comparison
+    prevDisplayValuesRef.current = result;
+    prevCellsRef.current = cells;
+
+    return result;
+  }, [cells, changedKeys]);
 
   // Compute effective display values including preview for editing cell
   const effectiveDisplayValues = useMemo(() => {

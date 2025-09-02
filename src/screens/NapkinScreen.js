@@ -10,6 +10,9 @@ import { pushHistory, undoOnce } from '../utils/undo';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useFormulaLogic } from '../hooks/useFormulaLogic';
 import { useKeyboard } from '../hooks/useKeyboard';
+import { shouldExpandGrid, shouldPruneGrid } from '../utils/conditionalHelpers';
+import { useRenameDialog } from '../hooks/useRenameDialog';
+// import { useCellEditor } from '../hooks/useCellEditor'; // Temporarily disabled
 
 export default function NapkinScreen({ napkin, onSaveNapkin, onExit }) {
 	const [state, setState] = useState(napkin);
@@ -17,14 +20,70 @@ export default function NapkinScreen({ napkin, onSaveNapkin, onExit }) {
 	const [inputValue, setInputValue] = useState('');
 
 	const [selection, setSelection] = useState(null);
-	const [renameVisible, setRenameVisible] = useState(false);
-	const [renameText, setRenameText] = useState(napkin.name || '');
 	const prevNapkinIdRef = useRef(napkin.id);
+	const [isSwitchingCells, setIsSwitchingCells] = useState(false);
+	const previewKeyRef = useRef(null);
+
+	// Define commitRename function first to avoid dependency issues
+	const commitRename = useCallback(async (nextName) => {
+		const trimmed = (nextName || '').trim();
+		if (!trimmed) return;
+		const updated = { ...state, name: trimmed, nameIsCustom: true, updatedAt: Date.now() };
+		setState(updated);
+		await onSaveNapkin(updated);
+	}, [onSaveNapkin, state]);
+
+	// Use extracted rename dialog hook
+	const {
+		renameVisible,
+		renameText,
+		setRenameText,
+		showRenameDialog,
+		hideRenameDialog,
+		handleRenameSubmit
+	} = useRenameDialog(state.name, commitRename);
+
+	// Temporarily use inline logic to test if hooks work
 	const [editingCell, setEditingCell] = useState({ x: 0, y: 0 });
 	const [isEditingDirty, setIsEditingDirty] = useState(false);
-	const [isSwitchingCells, setIsSwitchingCells] = useState(false);
 	const [isSaving, setIsSaving] = useState(false);
-	const previewKeyRef = useRef(null);
+
+	// Restore actual cell saving functionality
+	const saveCellIfChanged = useCallback(async (x, y, newContent) => {
+		const key = coordKey(x, y);
+		const prevContent = state.cells[key]?.content || '';
+
+		// If content hasn't changed, return false
+		if (prevContent === newContent) {
+			return false;
+		}
+
+		// Create history entry for undo functionality
+		const prevNapkinWithHistory = pushHistory(state);
+		let nextNapkin = { ...prevNapkinWithHistory };
+
+		// Update the cell content
+		nextNapkin.cells = setCell(state.cells, x, y, newContent);
+
+		// Handle grid expansion/pruning
+		if (!prevContent && newContent.trim()) {
+			// New content added - expand grid if needed
+			const expanded = expandIfAllowed(nextNapkin.cells, x, y);
+			nextNapkin.cells = expanded;
+		} else if (prevContent && !newContent.trim()) {
+			// Content removed - prune empty cells
+			nextNapkin.cells = pruneAdjacentIsolatedEmpties(nextNapkin.cells, x, y);
+		}
+
+		// Update timestamp
+		nextNapkin = { ...nextNapkin, updatedAt: Date.now() };
+
+		// Update state and save
+		setState(nextNapkin);
+		await onSaveNapkin(nextNapkin);
+
+		return true;
+	}, [state, setState, onSaveNapkin]);
 
 	// Use custom hook for formula logic
 	const {
@@ -67,33 +126,71 @@ export default function NapkinScreen({ napkin, onSaveNapkin, onExit }) {
 		}
 	}, [focused, isSwitchingCells]); // Only depend on focused and switching flag
 
-// Save currently editing cell (if changed)
-const saveFocusedCellIfChanged = useCallback(async () => {
-	if (!editingCell) return false;
-	const { x, y } = editingCell;
-	const key = coordKey(x, y);
-	const prevContent = state.cells[key]?.content || '';
-	if (prevContent === inputValue) return false;
+// Extract cell editing logic into a custom hook
+const useCellEditor = (state, setState, onSaveNapkin) => {
+	const [editingCell, setEditingCell] = useState({ x: 0, y: 0 });
+	const [isEditingDirty, setIsEditingDirty] = useState(false);
+	const [isSaving, setIsSaving] = useState(false);
 
-	setIsSaving(true);
-	try {
-		const prevNapkinWithHistory = pushHistory(state);
-		let nextNapkin = { ...prevNapkinWithHistory };
-		const prevCell = state.cells[key] || { x, y, content: '' };
-		nextNapkin.cells = setCell(state.cells, x, y, inputValue);
-		if (!prevCell.content && inputValue.trim()) {
-			nextNapkin.cells = expandIfAllowed(nextNapkin.cells, x, y);
-		} else if (!inputValue.trim()) {
-			nextNapkin.cells = pruneAdjacentIsolatedEmpties(nextNapkin.cells, x, y);
+	// Helper function to determine what grid changes are needed
+	const getGridChanges = (currentCells, x, y, newContent) => {
+		const prevCell = currentCells[coordKey(x, y)] || { x, y, content: '' };
+		const prevContent = prevCell.content || '';
+
+		if (shouldExpandGrid(prevContent, newContent)) {
+			return 'expand'; // New content added, expand grid if needed
+		} else if (shouldPruneGrid(prevContent, newContent)) {
+			return 'prune'; // Content removed, prune empty cells
 		}
-		nextNapkin = { ...nextNapkin, updatedAt: Date.now() };
-		setState(nextNapkin);
-		await onSaveNapkin(nextNapkin);
-		return true;
-	} finally {
-		setIsSaving(false);
-	}
-}, [editingCell, inputValue, onSaveNapkin, state]);
+		return 'none'; // No grid changes needed
+	};
+
+	// Save currently editing cell (if changed)
+	const saveCellIfChanged = useCallback(async (x, y, newContent) => {
+		const key = coordKey(x, y);
+		const prevContent = state.cells[key]?.content || '';
+		if (prevContent === newContent) return false;
+
+		setIsSaving(true);
+		try {
+			const prevNapkinWithHistory = pushHistory(state);
+			let nextNapkin = { ...prevNapkinWithHistory };
+
+			// Apply the cell content change
+			nextNapkin.cells = setCell(state.cells, x, y, newContent);
+
+			// Handle grid expansion/pruning based on content changes
+			const gridChange = getGridChanges(state.cells, x, y, newContent);
+			switch (gridChange) {
+				case 'expand':
+					nextNapkin.cells = expandIfAllowed(nextNapkin.cells, x, y);
+					break;
+				case 'prune':
+					nextNapkin.cells = pruneAdjacentIsolatedEmpties(nextNapkin.cells, x, y);
+					break;
+				default:
+					// No grid changes needed
+					break;
+			}
+
+			nextNapkin = { ...nextNapkin, updatedAt: Date.now() };
+			setState(nextNapkin);
+			await onSaveNapkin(nextNapkin);
+			return true;
+		} finally {
+			setIsSaving(false);
+		}
+	}, [state, setState, onSaveNapkin]);
+
+	return {
+		editingCell,
+		setEditingCell,
+		isEditingDirty,
+		setIsEditingDirty,
+		isSaving,
+		saveCellIfChanged
+	};
+};
 
 const onFocusCell = useCallback((x, y) => {
     if (focused && x === focused.x && y === focused.y) {
@@ -130,33 +227,16 @@ const onFocusCell = useCallback((x, y) => {
 		if (!target) return;
 		const { x, y } = target;
 
-		setIsSaving(true);
-		try {
-			const prevNapkinWithHistory = pushHistory(state);
-			let nextNapkin = { ...prevNapkinWithHistory };
-			const prevCell = state.cells[coordKey(x, y)] || { x, y, content: '' };
-			// Allow empty submit; no expansion will occur and content becomes ''
-			nextNapkin.cells = setCell(state.cells, x, y, inputValue);
-			if (!prevCell.content && inputValue.trim()) {
-				const expanded = expandIfAllowed(nextNapkin.cells, x, y);
-				nextNapkin.cells = expanded;
-			} else if (!inputValue.trim()) {
-				// On empty submit, prune adjacent empty cells that don't touch any non-empty cell
-				nextNapkin.cells = pruneAdjacentIsolatedEmpties(nextNapkin.cells, x, y);
-			}
-			nextNapkin = { ...nextNapkin, name: state.name, nameIsCustom: state.nameIsCustom || false, updatedAt: Date.now() };
-			setState(nextNapkin);
-			await onSaveNapkin(nextNapkin);
+		// Save the cell content
+		await saveCellIfChanged(x, y, inputValue);
 
-			// Always clear editing state after submit to prevent value transfer
-			setEditingCell(null);
-			setInputValue('');
-			setSelection(null);
-			// Keep focus on the current cell but clear editing state
-		} finally {
-			setIsSaving(false);
-		}
-	}, [editingCell, focused, inputValue, onSaveNapkin, state]);
+		// Clear editing state after submit
+		setEditingCell(null);
+		setInputValue('');
+		setSelection(null);
+	}, [editingCell, focused, inputValue, saveCellIfChanged]);
+
+	// clearEditingState is now handled inline in the submit function
 
 
 
@@ -174,31 +254,13 @@ const onFocusCell = useCallback((x, y) => {
 		await onSaveNapkin(undone);
 	}, [onSaveNapkin, state]);
 
-	const commitRename = useCallback(async (nextName) => {
-		const trimmed = (nextName || '').trim();
-		if (!trimmed) return;
-		const updated = { ...state, name: trimmed, nameIsCustom: true, updatedAt: Date.now() };
-		setState(updated);
-		await onSaveNapkin(updated);
-	}, [onSaveNapkin, state]);
+	// Rename dialog is now handled by the useRenameDialog hook
 
 	const onPressTitle = useCallback(() => {
-		if (Platform.OS === 'ios' && Alert.prompt) {
-			Alert.prompt(
-				'Rename napkin',
-				'',
-				[
-					{ text: 'Cancel', style: 'cancel' },
-					{ text: 'Save', onPress: (text) => commitRename(text) },
-				],
-				'plain-text',
-				state.name || 'Untitled'
-			);
-		} else {
-			setRenameText(state.name || 'Untitled');
-			setRenameVisible(true);
-		}
-	}, [commitRename, state.name]);
+		showRenameDialog();
+	}, [showRenameDialog]);
+
+	// commitRename is now defined earlier to avoid dependency issues
 
 
 
@@ -237,8 +299,8 @@ const onFocusCell = useCallback((x, y) => {
 			/>
 			<RenameModal
 				visible={renameVisible}
-				onClose={() => setRenameVisible(false)}
-				onRename={commitRename}
+				onClose={hideRenameDialog}
+				onRename={handleRenameSubmit}
 				initialName={state.name || 'Untitled'}
 			/>
 		</SafeAreaView>

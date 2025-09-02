@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createInitialCells } from './grid';
 import { withErrorHandling, NapkinError, ErrorCodes } from './errorHandling';
+import { STORAGE_KEYS } from './constants';
 
-const INDEX_KEY = 'napkin:index';
+const INDEX_KEY = STORAGE_KEYS.INDEX;
 
 export async function loadIndex() {
   return await withErrorHandling(async () => {
